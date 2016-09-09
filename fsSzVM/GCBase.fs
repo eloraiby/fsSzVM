@@ -16,7 +16,8 @@ type ICellType =
     abstract member TypeID         : int<ty>
     abstract member GetCellCount   : int<oref> -> int
     abstract member GetCellRef     : int<oref> * int -> int<cell>
-    abstract member ReplaceCellRef : int<oref> * int * int<cell> -> unit  // replace object reference   
+    abstract member ReplaceCellRef : int<oref> * int * int<cell> -> unit  // replace object reference 
+    abstract member Destruct       : int<oref> -> unit  
 
 let [<Literal>] CT_FREE     = 0<ty>
 let [<Literal>] CT_MOVED    = -1<ty>
@@ -34,8 +35,13 @@ type private DisposableArray<'T> (size: int, filler: int -> 'T) =
 
     member x.Length = arr.Length
 
+    member private x.Arr = arr
+
     static member init (size: int) (filler: int -> 'T) =
         new DisposableArray<'T> (size, filler)
+    static member iter (f: 'T -> unit) (da: DisposableArray<'T>) =
+        da.Arr
+        |> Array.iter f
 
     interface IDisposable with
         member x.Dispose() = ()
@@ -147,6 +153,13 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
             // claim arr here
             let old = arr
             arr <- newArr
+            // now destruct any remaining object
+            old
+            |> DisposableArray.iter (fun o ->
+                match o.Ty with
+                | CT_FREE | CT_MOVED -> ()
+                | t -> (getType o.Ty).Destruct o.Ptr)
+
             dispose old
             Some (arr.Length - index)
         | None -> // error!

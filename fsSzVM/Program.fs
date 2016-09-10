@@ -24,7 +24,7 @@ let testCompacting() =
     let mb = new MemoryBlock(fun t -> typeRegistry.[t])
 
     for i in 0..128 do
-        let h = mb.Alloc(IntCellType.Singleton.TypeID, 0<oref>)
+        let h = mb.Alloc(IntCellType.Singleton.TypeID, i * 1<oref>)
         dispose h
 
     dispose mb

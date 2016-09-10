@@ -19,8 +19,8 @@ type ICellType =
     abstract member ReplaceCellRef : int<oref> * int * int<cell> -> unit  // replace object reference 
     abstract member Destruct       : int<oref> -> unit  
 
-let [<Literal>] CT_FREE     = 0<ty>
-let [<Literal>] CT_MOVED    = -1<ty>
+let [<Literal>] CT_FREE     = -1<ty>
+let [<Literal>] CT_MOVED    = -2<ty>
 
 type Cell = { Pinned: bool
               Ty    : int<ty>
@@ -48,10 +48,12 @@ type private DisposableArray<'T> (size: int, filler: int -> 'T) =
 
 let private dispose (d: #IDisposable) = d.Dispose()
 
-type Handle internal (arr: MemoryBlock, idx: int) =
+type Handle internal (arr: MemoryBlock, idx: int, t: int<ty>, p: int<oref>) =
     let sanityCheck() =
         assert(idx >= 0 && idx < arr.Size)
         assert(arr.[idx].Pinned = true)
+
+    do arr.[idx] <- { Pinned = true; Ty = t; Ptr = p}
 
     member x.Ptr    =
         sanityCheck()
@@ -73,7 +75,7 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
 
     let nextPinnedIndex (start: int<src>) =
         let mutable i = start * 1</src>
-        while not arr.[i].Pinned && i < arr.Length do
+        while i < arr.Length && not arr.[i].Pinned do
             i <- i + 1
         match i with
         | x when x < arr.Length -> Some (i * 1<src>)
@@ -81,7 +83,7 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
 
     let nextFreeIndex (arr: DisposableArray<Cell>) (start: int<dst>) =
         let mutable i = start * 1</dst>
-        while arr.[i].Ty <> CT_FREE do
+        while i < arr.Length && arr.[i].Ty <> CT_FREE do
             i <- i + 1
         match i with
         | x when x < arr.Length -> Some (i * 1<dst>)
@@ -122,8 +124,8 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
     // returns the last dest position
     let step (arrDest: DisposableArray<Cell>, fi: int<dst>, pi: int<src>) =
         match nextPinnedIndex pi with
-        | None -> None
-        | Some pi -> moveObject (arrDest, fi, pi)
+        | None -> Some fi, None
+        | Some pi -> moveObject (arrDest, fi, pi), Some 0
         
     // compact the memory first
     let compact () =
@@ -137,8 +139,9 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
 
         let rec loop (fi, pi) =
             match step (arrDest, fi, pi) with
-            | None -> None
-            | Some fi -> loop (fi, pi + 1<src>)
+            | Some fi, None -> Some fi
+            | Some fi, _ -> loop (fi, pi + 1<src>)
+            | None, _ -> None
 
         loop (0<dst>, 0<src>), arrDest
 
@@ -171,10 +174,15 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
         if index < arr.Length
         then
             let i = index
-            arr.[i] <- { Pinned = true; Ty = t; Ptr = p}
             index <- index + 1
-            i
-        else 0
+            new Handle(x, i, t, p)
+        else
+            match x.GC() with
+            | None -> failwith "not enough memory"
+            | Some _ ->
+                let i = index
+                index <- index + 1
+                new Handle(x, i, t, p)
 
     member x.Size = arr.Length
 

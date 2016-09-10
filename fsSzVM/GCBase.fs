@@ -37,8 +37,8 @@ type private DisposableArray<'T> (size: int, filler: int -> 'T) =
 
     member private x.Arr = arr
 
-    static member init (size: int) (filler: int -> 'T) =
-        new DisposableArray<'T> (size, filler)
+    static member init (size: int) (filler: int -> 'T) = new DisposableArray<'T> (size, filler)
+
     static member iter (f: 'T -> unit) (da: DisposableArray<'T>) =
         da.Arr
         |> Array.iter f
@@ -55,13 +55,20 @@ type Handle internal (arr: MemoryBlock, idx: int, t: int<ty>, p: int<oref>) =
 
     do arr.[idx] <- { Pinned = true; Ty = t; Ptr = p}
 
-    member x.Ptr    =
-        sanityCheck()
-        arr.[idx].Ptr
+    member x.Ptr with get () =
+                     sanityCheck()
+                     arr.[idx].Ptr
+                 and set v =
+                     sanityCheck()
+                     arr.[idx] <- { arr.[idx] with Ptr = v }
     
     member x.Ty     =
         sanityCheck()
         arr.[idx].Ty
+
+    member x.IsPinned =
+        sanityCheck()
+        arr.[idx].Pinned
 
     interface IDisposable with
         member x.Dispose() =
@@ -71,7 +78,7 @@ type Handle internal (arr: MemoryBlock, idx: int, t: int<ty>, p: int<oref>) =
 and MemoryBlock(getType: int<ty> -> ICellType) =
     let [<Literal>] INITIAL_PROCESS_SIZE = 64
     let mutable arr = DisposableArray.init INITIAL_PROCESS_SIZE (fun _ -> Cell.empty)
-    let mutable index = 0
+    let mutable iterator = 0
 
     let nextPinnedIndex (start: int<src>) =
         let mutable i = start * 1</src>
@@ -83,10 +90,10 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
 
     let nextFreeIndex (arr: DisposableArray<Cell>) (start: int<dst>) =
         let mutable i = start * 1</dst>
-        while i < arr.Length && arr.[i].Ty <> CT_FREE do
+        while i < start * 1</dst> + arr.Length && arr.[i % arr.Length].Ty <> CT_FREE do
             i <- i + 1
         match i with
-        | x when x < arr.Length -> Some (i * 1<dst>)
+        | x when x < start * 1</dst> + arr.Length -> Some (i % arr.Length * 1<dst>)
         | _                     -> None
 
     // returns last dest position
@@ -152,7 +159,7 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
         let freeIdx, newArr = compact()
         match freeIdx with
         | Some fi ->
-            index <- fi * 1</dst>
+            iterator <- fi * 1</dst>
             // claim arr here
             let old = arr
             arr <- newArr
@@ -164,28 +171,41 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
                 | t -> (getType o.Ty).Destruct o.Ptr)
 
             dispose old
-            Some (arr.Length - index)
+            Some (arr.Length - iterator)
         | None -> // error!
             // new array should be claimed here (keep old array)
             dispose newArr
             None
 
     member x.Alloc(t, p) =
-        if index < arr.Length
-        then
-            let i = index
-            index <- index + 1
-            new Handle(x, i, t, p)
-        else
+        let i = nextFreeIndex arr (iterator * 1<dst>)
+        match i with
+        | Some i ->
+            iterator <- i * 1</dst> + 1
+            new Handle(x, i * 1</dst>, t, p)
+        | None ->
             match x.GC() with
             | None -> failwith "not enough memory"
             | Some _ ->
-                let i = index
-                index <- index + 1
-                new Handle(x, i, t, p)
+                let i = nextFreeIndex arr (iterator * 1<dst>)
+                match i with
+                | Some i ->
+                    iterator <- i * 1</dst> + 1
+                    new Handle(x, i * 1</dst>, t, p)
+                | None -> failwith "Something went terribly wrong: not enough memory after compacting and returning OK"
+
 
     member x.Size = arr.Length
 
     interface IDisposable with
-        member x.Dispose () = dispose arr
+        member x.Dispose () =
+            // destruct all cells before disposal
+            arr
+            |> DisposableArray.iter(fun c ->
+                match c.Ty with
+                | CT_FREE | CT_MOVED -> ()
+                | _ ->
+                    c.Ptr
+                    |> (getType c.Ty).Destruct)
+            dispose arr
 

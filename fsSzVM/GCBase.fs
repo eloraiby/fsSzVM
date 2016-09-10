@@ -37,8 +37,8 @@ type private DisposableArray<'T> (size: int, filler: int -> 'T) =
 
     member private x.Arr = arr
 
-    static member init (size: int) (filler: int -> 'T) =
-        new DisposableArray<'T> (size, filler)
+    static member init (size: int) (filler: int -> 'T) = new DisposableArray<'T> (size, filler)
+
     static member iter (f: 'T -> unit) (da: DisposableArray<'T>) =
         da.Arr
         |> Array.iter f
@@ -83,10 +83,10 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
 
     let nextFreeIndex (arr: DisposableArray<Cell>) (start: int<dst>) =
         let mutable i = start * 1</dst>
-        while i < arr.Length && arr.[i].Ty <> CT_FREE do
+        while i < start * 1</dst> + arr.Length && arr.[i % arr.Length].Ty <> CT_FREE do
             i <- i + 1
         match i with
-        | x when x < arr.Length -> Some (i * 1<dst>)
+        | x when x < start * 1</dst> + arr.Length -> Some (i % arr.Length * 1<dst>)
         | _                     -> None
 
     // returns last dest position
@@ -171,21 +171,34 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
             None
 
     member x.Alloc(t, p) =
-        if index < arr.Length
-        then
-            let i = index
-            index <- index + 1
-            new Handle(x, i, t, p)
-        else
+        let i = nextFreeIndex arr (index * 1<dst>)
+        match i with
+        | Some i ->
+            index <- i * 1</dst> + 1
+            new Handle(x, i * 1</dst>, t, p)
+        | None ->
             match x.GC() with
             | None -> failwith "not enough memory"
             | Some _ ->
-                let i = index
-                index <- index + 1
-                new Handle(x, i, t, p)
+                let i = nextFreeIndex arr (index * 1<dst>)
+                match i with
+                | Some i ->
+                    index <- i * 1</dst> + 1
+                    new Handle(x, i * 1</dst>, t, p)
+                | None -> failwith "Something went terribly wrong: not enough memory after compacting and returning OK"
+
 
     member x.Size = arr.Length
 
     interface IDisposable with
-        member x.Dispose () = dispose arr
+        member x.Dispose () =
+            // destruct all cells before disposal
+            arr
+            |> DisposableArray.iter(fun c ->
+                match c.Ty with
+                | CT_FREE | CT_MOVED -> ()
+                | _ ->
+                    c.Ptr
+                    |> (getType c.Ty).Destruct)
+            dispose arr
 

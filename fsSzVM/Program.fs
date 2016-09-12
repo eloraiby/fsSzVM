@@ -28,11 +28,16 @@ type Cons = { Head : int<cell>
               Tail : int<cell> }
 
 type ConsCellType private (tyid) =
-    let cons = Collections.Generic.List<Cons>()
+    static let cons = Collections.Generic.List<Cons>()
 
     static member Singleton = 
         let ct = ConsCellType (typeRegistry.Count * 1<ty>)
         typeRegistry.AddOrUpdate(typeRegistry.Count * 1<ty>, ct, fun i ct -> ct)
+
+    static member make(h: int<cell>, t: int<cell>) =
+        let i = cons.Count
+        cons.Add { Head = h; Tail = t }
+        i
 
     interface ICellType with
         member x.TypeID             = tyid

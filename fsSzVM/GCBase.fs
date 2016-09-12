@@ -70,6 +70,11 @@ type Handle internal (arr: MemoryBlock, idx: int, t: int<ty>, p: int<oref>) =
         sanityCheck()
         arr.[idx].Pinned
 
+    // the cell index is invariant as long as this object lives (not disposed)
+    member x.CellIndex  =
+        sanityCheck()
+        idx
+
     interface IDisposable with
         member x.Dispose() =
             sanityCheck()

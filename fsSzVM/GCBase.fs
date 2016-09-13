@@ -73,7 +73,7 @@ type Handle internal (arr: MemoryBlock, idx: int, t: int<ty>, p: int<oref>) =
     // the cell index is invariant as long as this object lives (not disposed)
     member x.CellIndex  =
         sanityCheck()
-        idx
+        idx * 1<cell>
 
     interface IDisposable with
         member x.Dispose() =
@@ -114,7 +114,7 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
 
     // returns last dest position
     and moveReferencedObjects (arrDest: DisposableArray<Cell>, fi: int<dst>, ob: Cell) =
-        let oty =getType ob.Ty
+        let oty = getType ob.Ty
         let cnt = oty.GetCellCount ob.Ptr
 
         let rec loop (fi, i) =

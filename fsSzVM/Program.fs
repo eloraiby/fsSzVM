@@ -37,7 +37,7 @@ type ConsCellType private (tyid) =
     static member make(h: int<cell>, t: int<cell>) =
         let i = cons.Count
         cons.Add { Head = h; Tail = t }
-        i
+        i * 1<oref>
 
     interface ICellType with
         member x.TypeID             = tyid
@@ -93,14 +93,25 @@ let testMoving() =
         mb.Alloc (IntCellType.Singleton.TypeID, i * 1<oref>)
         |> dispose
 
-    let h = mb.Alloc (IntCellType.Singleton.TypeID, 1777 * 1<oref>)
+    let h1 = mb.Alloc (IntCellType.Singleton.TypeID, 1111<oref>)
+    let h2 = mb.Alloc (IntCellType.Singleton.TypeID, 2222<oref>)
+    let cid = ConsCellType.make (h1.CellIndex, h2.CellIndex)
+    let c = mb.Alloc (ConsCellType.Singleton.TypeID, cid)
 
+    dispose h1
+    dispose h2
+
+    for i in 0..mb.Size * 4 do
+        mb.Alloc (IntCellType.Singleton.TypeID, i * 1<oref>)
+        |> dispose
+         
     dispose mb
     printfn "success"
 
 [<EntryPoint>]
 let main argv = 
     printfn "%A" argv
-    testCompacting()
-    testPinning()
+    testCompacting ()
+    testPinning ()
+    testMoving ()
     0 // return an integer exit code

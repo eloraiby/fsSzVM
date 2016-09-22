@@ -48,6 +48,9 @@ type private DisposableArray<'T> (size: int, filler: int -> 'T) =
 
 let private dispose (d: #IDisposable) = d.Dispose()
 
+type MoveResult = { LastFreeIndex   : int<cell>
+                    Destination     : int<dst> }
+
 type Handle internal (arr: MemoryBlock, idx: int, t: int<ty>, p: int<oref>) =
     let sanityCheck() =
         assert(idx >= 0 && idx < arr.Size)
@@ -100,9 +103,9 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
         match i with
         | x when x < start * 1</dst> + arr.Length -> Some (i % arr.Length * 1<dst>)
         | _                     -> None
-
+    (*
     // returns last dest position
-    let rec moveObject (arrDest: DisposableArray<Cell>, fi: int<dst>, ob: int<src>) =
+    let rec moveObject (arrDest: DisposableArray<Cell>, fi: int<dst>, ob: int<src>) : MoveResult option =
         let fiI = fi * 1</dst>
         let obI = ob * 1</src>
         match nextFreeIndex arrDest fi with
@@ -113,21 +116,21 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
         | None -> None
 
     // returns last dest position
-    and moveReferencedObjects (arrDest: DisposableArray<Cell>, fi: int<dst>, ob: Cell) =
+    and moveReferencedObjects (arrDest: DisposableArray<Cell>, fi: int<dst>, ob: Cell) : MoveResult option =
         let oty = getType ob.Ty
         let cnt = oty.GetCellCount ob.Ptr
 
-        let rec loop (fi, i) =
+        let rec loop (mit, i) =
             match i with
             | i when i < cnt ->
                 let cid = oty.GetCellRef (ob.Ptr, i)
-                match moveObject (arrDest, fi, cid * 1<src/cell>) with
+                match moveObject (arrDest, mit, cid * 1<src/cell>) with
                 | None -> None
-                | Some fi ->
+                | Some { MoveResult.Destination = fi; LastFreeIndex = it } ->
                     // replace the reference
                     oty.ReplaceCellRef (ob.Ptr, i, arr.[cid * 1</cell>].Ptr * 1<cell/oref>)
-                    loop (fi, i + 1)
-            | _ -> Some fi
+                    loop (it * 1<dst/cell>, i + 1)
+            | _ -> Some { LastFreeIndex = fi * 1<cell>; Destination = -1<dst> }
 
         match nextFreeIndex arrDest fi with
         | Some fi -> loop (fi, 0)
@@ -138,7 +141,43 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
         match nextPinnedIndex pi with
         | None -> Some fi, None
         | Some pi -> moveObject (arrDest, fi, pi), Some 0
-        
+    *)
+       
+    // move objects recursively
+    let rec moveObject(destArr: DisposableArray<Cell>, lmr: MoveResult, ob: int<cell>) : MoveResult =
+        let c = arr.[ob * 1</cell>]
+        match c.Ty with
+        | CT_FREE -> failwith "unexpected free"
+        | CT_MOVED -> { lmr with MoveResult.Destination = c.Ptr * 1<dst/oref> }
+        | ty -> // anything else, we have to digg deeper
+            let oty = getType ty
+            let rcnt = oty.GetCellCount c.Ptr
+            let state =
+                match c.Pinned with
+                | true -> { lmr with LastFreeIndex = lmr.LastFreeIndex + 1<cell> }
+                | false ->  
+                    let nextFree = nextFreeIndex destArr (lmr.LastFreeIndex * 1<dst/cell>)
+                    match nextFree with
+                    | Some nextFree ->
+                        destArr.[nextFree * 1</dst>] <- c
+                        arr.[ob * 1</cell>] <- { Cell.Pinned = false; Cell.Ty = CT_MOVED; Cell.Ptr = nextFree * 1<oref/dst> }
+                        { LastFreeIndex = nextFree * 1<cell/dst> + 1<cell>; Destination = nextFree }
+
+                    | None -> failwith "unexpected error, no more free cells"
+
+            let rec loop (state: MoveResult, i) =
+                match i with
+                | i when i < rcnt ->
+                    let res = moveObject (destArr, state, oty.GetCellRef(c.Ptr, i)) 
+                    match res with
+                    | { Destination = d; LastFreeIndex = f } ->
+                        oty.ReplaceCellRef (c.Ptr, i, d * 1<cell/dst>)
+                        loop (state, i + 1)
+                    
+                | _ -> state
+                
+            loop (lmr, 0)
+
     // compact the memory first
     let compact () =
         // start by copying the pinned objects in their place
@@ -149,13 +188,15 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
                 | false -> Cell.empty)
             |> DisposableArray.init arr.Length
 
-        let rec loop (fi, pi) =
-            match step (arrDest, fi, pi) with
-            | Some fi, None -> Some fi
-            | Some fi, _ -> loop (fi, pi + 1<src>)
-            | None, _ -> None
+        let rec loop (state, pi) =
+            let pi = nextPinnedIndex pi
+            match pi with
+            | Some pi ->
+                let state = moveObject (arrDest, state, pi * 1<cell/src>)
+                loop (state, pi + 1<src>)
+            | None    -> state.LastFreeIndex
 
-        loop (0<dst>, 0<src>), arrDest
+        loop ({ LastFreeIndex = 0<cell>; Destination = -1<dst> }, 0<src>), arrDest
 
     // even after GC, the handles are still valid
     member internal x.Item with get i = arr.[i]
@@ -163,8 +204,8 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
     member x.GC () =
         let freeIdx, newArr = compact()
         match freeIdx with
-        | Some fi ->
-            iterator <- fi * 1</dst>
+        | fi when fi < arr.Length * 1<cell> ->
+            iterator <- fi * 1</cell>
             // claim arr here
             let old = arr
             arr <- newArr
@@ -177,7 +218,7 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
 
             dispose old
             Some (arr.Length - iterator)
-        | None -> // error!
+        | fi when fi >= arr.Length * 1<cell> -> // error!
             // new array should be claimed here (keep old array)
             dispose newArr
             None

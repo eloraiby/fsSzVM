@@ -30,9 +30,12 @@ type Cons = { Head : int<cell>
 type ConsCellType private (tyid) =
     static let cons = Collections.Generic.List<Cons>()
 
-    static member Singleton = 
+    static let singleton_ = lazy (
         let ct = ConsCellType (typeRegistry.Count * 1<ty>)
-        typeRegistry.AddOrUpdate(typeRegistry.Count * 1<ty>, ct, fun i ct -> ct)
+        typeRegistry.AddOrUpdate(typeRegistry.Count * 1<ty>, ct, fun i ct -> ct))
+
+    static member Singleton = singleton_.Value
+
 
     static member make(h: int<cell>, t: int<cell>) =
         let i = cons.Count
@@ -105,6 +108,14 @@ let testMoving() =
         mb.Alloc (IntCellType.Singleton.TypeID, i * 1<oref>)
         |> dispose
          
+    assert(c.IsPinned = true)
+    assert(c.Ty = ConsCellType.Singleton.TypeID)
+    let h1i = typeRegistry.[c.Ty].GetCellRef(c.Ptr, 0)
+    let h2i = typeRegistry.[c.Ty].GetCellRef(c.Ptr, 1)
+    let h1 = mb.[h1i * 1</cell>]
+    let h2 = mb.[h2i * 1</cell>]
+    assert(h1.Ptr = 1111<oref>)
+    assert(h2.Ptr = 2222<oref>)
     dispose mb
     printfn "success"
 

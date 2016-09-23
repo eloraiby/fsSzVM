@@ -103,62 +103,26 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
         match i with
         | x when x < start * 1</dst> + arr.Length -> Some (i % arr.Length * 1<dst>)
         | _                     -> None
-    (*
-    // returns last dest position
-    let rec moveObject (arrDest: DisposableArray<Cell>, fi: int<dst>, ob: int<src>) : MoveResult option =
-        let fiI = fi * 1</dst>
-        let obI = ob * 1</src>
-        match nextFreeIndex arrDest fi with
-        | Some fi ->
-            arrDest.[fiI] <- arr.[obI]
-            arr.[obI]     <- { Pinned = false; Ty = CT_MOVED; Ptr = fiI * 1<oref> }
-            moveReferencedObjects (arrDest, fi + 1<dst>, arrDest.[fiI])
-        | None -> None
-
-    // returns last dest position
-    and moveReferencedObjects (arrDest: DisposableArray<Cell>, fi: int<dst>, ob: Cell) : MoveResult option =
-        let oty = getType ob.Ty
-        let cnt = oty.GetCellCount ob.Ptr
-
-        let rec loop (mit, i) =
-            match i with
-            | i when i < cnt ->
-                let cid = oty.GetCellRef (ob.Ptr, i)
-                match moveObject (arrDest, mit, cid * 1<src/cell>) with
-                | None -> None
-                | Some { MoveResult.Destination = fi; LastFreeIndex = it } ->
-                    // replace the reference
-                    oty.ReplaceCellRef (ob.Ptr, i, arr.[cid * 1</cell>].Ptr * 1<cell/oref>)
-                    loop (it * 1<dst/cell>, i + 1)
-            | _ -> Some { LastFreeIndex = fi * 1<cell>; Destination = -1<dst> }
-
-        match nextFreeIndex arrDest fi with
-        | Some fi -> loop (fi, 0)
-        | None    -> None
-
-    // returns the last dest position
-    let step (arrDest: DisposableArray<Cell>, fi: int<dst>, pi: int<src>) =
-        match nextPinnedIndex pi with
-        | None -> Some fi, None
-        | Some pi -> moveObject (arrDest, fi, pi), Some 0
-    *)
        
     // move objects recursively
     let rec moveObject(destArr: DisposableArray<Cell>, lmr: MoveResult, ob: int<cell>) : MoveResult =
         let c = arr.[ob * 1</cell>]
         match c.Ty with
         | CT_FREE -> failwith "unexpected free"
-        | CT_MOVED -> { lmr with MoveResult.Destination = c.Ptr * 1<dst/oref> }
+        | CT_MOVED ->
+            assert(c.Ptr <> -1<oref>)
+            { lmr with MoveResult.Destination = c.Ptr * 1<dst/oref> }
         | ty -> // anything else, we have to digg deeper
             let oty = getType ty
             let rcnt = oty.GetCellCount c.Ptr
             let state =
                 match c.Pinned with
-                | true -> { lmr with LastFreeIndex = lmr.LastFreeIndex + 1<cell> }
+                | true -> { LastFreeIndex = lmr.LastFreeIndex + 1<cell>; Destination = ob * 1<dst/cell> }
                 | false ->  
                     let nextFree = nextFreeIndex destArr (lmr.LastFreeIndex * 1<dst/cell>)
                     match nextFree with
                     | Some nextFree ->
+                        assert(nextFree <> -1<dst>)
                         destArr.[nextFree * 1</dst>] <- c
                         arr.[ob * 1</cell>] <- { Cell.Pinned = false; Cell.Ty = CT_MOVED; Cell.Ptr = nextFree * 1<oref/dst> }
                         { LastFreeIndex = nextFree * 1<cell/dst> + 1<cell>; Destination = nextFree }
@@ -168,15 +132,17 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
             let rec loop (state: MoveResult, i) =
                 match i with
                 | i when i < rcnt ->
-                    let res = moveObject (destArr, state, oty.GetCellRef(c.Ptr, i)) 
+                    let r = oty.GetCellRef(c.Ptr, i)
+                    let res = moveObject (destArr, state, r) 
                     match res with
-                    | { Destination = d; LastFreeIndex = f } ->
-                        oty.ReplaceCellRef (c.Ptr, i, d * 1<cell/dst>)
-                        loop (state, i + 1)
+                    | state2 ->
+                        assert(state2.Destination <> -1<dst>)
+                        oty.ReplaceCellRef (c.Ptr, i, state2.Destination * 1<cell/dst>)
+                        loop (state2, i + 1)
                     
                 | _ -> state
                 
-            loop (lmr, 0)
+            loop (state, 0)
 
     // compact the memory first
     let compact () =

@@ -110,12 +110,52 @@ let testMoving() =
          
     assert(c.IsPinned = true)
     assert(c.Ty = ConsCellType.Singleton.TypeID)
+    assert(typeRegistry.[c.Ty].GetCellCount(c.Ptr) = 2)
     let h1i = typeRegistry.[c.Ty].GetCellRef(c.Ptr, 0)
     let h2i = typeRegistry.[c.Ty].GetCellRef(c.Ptr, 1)
     let h1 = mb.[h1i * 1</cell>]
     let h2 = mb.[h2i * 1</cell>]
+    assert(h1.Ty = IntCellType.Singleton.TypeID)
+    assert(h2.Ty = IntCellType.Singleton.TypeID)
+    assert(h1.Pinned = false)
+    assert(h2.Pinned = false)
     assert(h1.Ptr = 1111<oref>)
     assert(h2.Ptr = 2222<oref>)
+
+    let h3 = mb.Alloc (IntCellType.Singleton.TypeID, 3333<oref>)
+    let cid2 = ConsCellType.make (c.CellIndex, h3.CellIndex)
+    let c2 = mb.Alloc (ConsCellType.Singleton.TypeID, cid2)
+
+    dispose c
+
+    for i in 0..mb.Size * 4 do
+        mb.Alloc (IntCellType.Singleton.TypeID, i * 1<oref>)
+        |> dispose
+    
+    for i in 0..mb.Size  - 1 do
+        if mb.[i].Ty > 0<ty>
+        then printfn "%d - %d" i mb.[i].Ptr
+
+    assert(c2.IsPinned = true)
+    assert(c2.Ty = ConsCellType.Singleton.TypeID)
+    assert(typeRegistry.[c2.Ty].GetCellCount(c2.Ptr) = 2)
+
+    let ci = typeRegistry.[c2.Ty].GetCellRef(c2.Ptr, 0)
+    let h3i = typeRegistry.[c2.Ty].GetCellRef(c2.Ptr, 1)
+    let c = mb.[ci * 1</cell>]
+    let h3 = mb.[h3i * 1</cell>]
+    let h1i = typeRegistry.[c.Ty].GetCellRef(c.Ptr, 0)
+    let h2i = typeRegistry.[c.Ty].GetCellRef(c.Ptr, 1)
+    let h1 = mb.[h1i * 1</cell>]
+    let h2 = mb.[h2i * 1</cell>]
+    assert(h1.Ty = IntCellType.Singleton.TypeID)
+    assert(h2.Ty = IntCellType.Singleton.TypeID)
+    assert(h1.Pinned = false)
+    assert(h2.Pinned = false)
+    assert(h1.Ptr = 1111<oref>)
+    assert(h2.Ptr = 2222<oref>)
+
+    dispose c2
     dispose mb
     printfn "success"
 

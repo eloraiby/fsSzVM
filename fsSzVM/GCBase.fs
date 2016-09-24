@@ -134,15 +134,15 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
                 | i when i < rcnt ->
                     let r = oty.GetCellRef(c.Ptr, i)
                     let res = moveObject (destArr, state, r) 
-                    match res with
-                    | state2 ->
-                        assert(state2.Destination <> -1<dst>)
-                        oty.ReplaceCellRef (c.Ptr, i, state2.Destination * 1<cell/dst>)
-                        loop (state2, i + 1)
+                    printfn "moving %d to %d" r res.Destination
+                    assert(res.Destination <> -1<dst>)
+                    oty.ReplaceCellRef (c.Ptr, i, res.Destination * 1<cell/dst>)
+                    loop (res, i + 1)
                     
                 | _ -> state
                 
-            loop (state, 0)
+            let state2 = loop (state, 0)
+            { state with LastFreeIndex = state2.LastFreeIndex }
 
     // compact the memory first
     let compact () =
@@ -158,6 +158,7 @@ and MemoryBlock(getType: int<ty> -> ICellType) =
             let pi = nextPinnedIndex pi
             match pi with
             | Some pi ->
+                printfn "pinned: %d" pi
                 let state = moveObject (arrDest, state, pi * 1<cell/src>)
                 loop (state, pi + 1<src>)
             | None    -> state.LastFreeIndex
